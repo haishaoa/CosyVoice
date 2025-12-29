@@ -36,28 +36,34 @@ class CosyVoice:
             raise ValueError('{} not found!'.format(hyper_yaml_path))
         with open(hyper_yaml_path, 'r') as f:
             configs = load_hyperpyyaml(f)
-        assert get_model_type(configs) == CosyVoiceModel, 'do not use {} for CosyVoice initialization!'.format(model_dir)
+        assert get_model_type(
+            configs) == CosyVoiceModel, 'do not use {} for CosyVoice initialization!'.format(model_dir)
         self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],
                                           configs['feat_extractor'],
                                           '{}/campplus.onnx'.format(model_dir),
-                                          '{}/speech_tokenizer_v1.onnx'.format(model_dir),
+                                          '{}/speech_tokenizer_v1.onnx'.format(
+                                              model_dir),
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
         if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or fp16 is True):
             load_jit, load_trt, fp16 = False, False, False
-            logging.warning('no cuda device, set load_jit/load_trt/fp16 to False')
-        self.model = CosyVoiceModel(configs['llm'], configs['flow'], configs['hift'], fp16)
+            logging.warning(
+                'no cuda device, set load_jit/load_trt/fp16 to False')
+        self.model = CosyVoiceModel(
+            configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),
                         '{}/hift.pt'.format(model_dir))
         if load_jit:
             self.model.load_jit('{}/llm.text_encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
-                                '{}/llm.llm.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
+                                '{}/llm.llm.{}.zip'.format(
+                                    model_dir, 'fp16' if self.fp16 is True else 'fp32'),
                                 '{}/flow.encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
         if load_trt:
             self.model.load_trt('{}/flow.decoder.estimator.{}.mygpu.plan'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
-                                '{}/flow.decoder.estimator.fp32.onnx'.format(model_dir),
+                                '{}/flow.decoder.estimator.fp32.onnx'.format(
+                                    model_dir),
                                 trt_concurrent,
                                 self.fp16)
         del configs
@@ -68,14 +74,16 @@ class CosyVoice:
 
     def add_zero_shot_spk(self, prompt_text, prompt_wav, zero_shot_spk_id):
         assert zero_shot_spk_id != '', 'do not use empty zero_shot_spk_id'
-        model_input = self.frontend.frontend_zero_shot('', prompt_text, prompt_wav, self.sample_rate, '')
+        model_input = self.frontend.frontend_zero_shot(
+            '', prompt_text, prompt_wav, self.sample_rate, '')
         del model_input['text']
         del model_input['text_len']
         self.frontend.spk2info[zero_shot_spk_id] = model_input
         return True
 
     def save_spkinfo(self):
-        torch.save(self.frontend.spk2info, '{}/spk2info.pt'.format(self.model_dir))
+        torch.save(self.frontend.spk2info,
+                   '{}/spk2info.pt'.format(self.model_dir))
 
     def inference_sft(self, tts_text, spk_id, stream=False, speed=1.0, text_frontend=True):
         for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
@@ -83,55 +91,79 @@ class CosyVoice:
             start_time = time.time()
             logging.info('synthesis text {}'.format(i))
             for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
-                speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
-                logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+                speech_len = model_output['tts_speech'].shape[1] / \
+                    self.sample_rate
+                logging.info('yield speech len {}, rtf {}'.format(
+                    speech_len, (time.time() - start_time) / speech_len))
                 yield model_output
                 start_time = time.time()
 
+    # 对输入的待合成文本做归一化拆分，结合提示文本/提示音频完成零样本说话人语音合成，支持流式输出，并实时计算合成语音的时长和RTF（实时因子）
     def inference_zero_shot(self, tts_text, prompt_text, prompt_wav, zero_shot_spk_id='', stream=False, speed=1.0, text_frontend=True):
-        prompt_text = self.frontend.text_normalize(prompt_text, split=False, text_frontend=text_frontend)
+        # 对提示文本做归一化处理
+        # self.frontend：类实例的文本前端处理模块（封装文本归一化、特征提取等逻辑）
+        # text_normalize：文本归一化方法（统一文本格式，如全角转半角、繁体转简体、标点符号标准化等）
+        prompt_text = self.frontend.text_normalize(
+            prompt_text,
+            split=False,
+            # text_frontend：是否开启文本前端处理（如拼音转换、标点归一等）
+            text_frontend=text_frontend
+        )
         for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
             if (not isinstance(i, Generator)) and len(i) < 0.5 * len(prompt_text):
-                logging.warning('synthesis text {} too short than prompt text {}, this may lead to bad performance'.format(i, prompt_text))
-            model_input = self.frontend.frontend_zero_shot(i, prompt_text, prompt_wav, self.sample_rate, zero_shot_spk_id)
+                logging.warning(
+                    'synthesis text {} too short than prompt text {}, this may lead to bad performance'.format(i, prompt_text))
+            model_input = self.frontend.frontend_zero_shot(
+                i, prompt_text, prompt_wav, self.sample_rate, zero_shot_spk_id)
             start_time = time.time()
             logging.info('synthesis text {}'.format(i))
             for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
-                speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
-                logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+                speech_len = model_output['tts_speech'].shape[1] / \
+                    self.sample_rate
+                logging.info('yield speech len {}, rtf {}'.format(
+                    speech_len, (time.time() - start_time) / speech_len))
                 yield model_output
                 start_time = time.time()
 
     def inference_cross_lingual(self, tts_text, prompt_wav, zero_shot_spk_id='', stream=False, speed=1.0, text_frontend=True):
         for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
-            model_input = self.frontend.frontend_cross_lingual(i, prompt_wav, self.sample_rate, zero_shot_spk_id)
+            model_input = self.frontend.frontend_cross_lingual(
+                i, prompt_wav, self.sample_rate, zero_shot_spk_id)
             start_time = time.time()
             logging.info('synthesis text {}'.format(i))
             for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
-                speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
-                logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+                speech_len = model_output['tts_speech'].shape[1] / \
+                    self.sample_rate
+                logging.info('yield speech len {}, rtf {}'.format(
+                    speech_len, (time.time() - start_time) / speech_len))
                 yield model_output
                 start_time = time.time()
 
     def inference_instruct(self, tts_text, spk_id, instruct_text, stream=False, speed=1.0, text_frontend=True):
         assert self.__class__.__name__ == 'CosyVoice', 'inference_instruct is only implemented for CosyVoice!'
-        instruct_text = self.frontend.text_normalize(instruct_text, split=False, text_frontend=text_frontend)
+        instruct_text = self.frontend.text_normalize(
+            instruct_text, split=False, text_frontend=text_frontend)
         for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
-            model_input = self.frontend.frontend_instruct(i, spk_id, instruct_text)
+            model_input = self.frontend.frontend_instruct(
+                i, spk_id, instruct_text)
             start_time = time.time()
             logging.info('synthesis text {}'.format(i))
             for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
-                speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
-                logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+                speech_len = model_output['tts_speech'].shape[1] / \
+                    self.sample_rate
+                logging.info('yield speech len {}, rtf {}'.format(
+                    speech_len, (time.time() - start_time) / speech_len))
                 yield model_output
                 start_time = time.time()
 
     def inference_vc(self, source_wav, prompt_wav, stream=False, speed=1.0):
-        model_input = self.frontend.frontend_vc(source_wav, prompt_wav, self.sample_rate)
+        model_input = self.frontend.frontend_vc(
+            source_wav, prompt_wav, self.sample_rate)
         start_time = time.time()
         for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
             speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
-            logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+            logging.info('yield speech len {}, rtf {}'.format(
+                speech_len, (time.time() - start_time) / speech_len))
             yield model_output
             start_time = time.time()
 
@@ -147,41 +179,51 @@ class CosyVoice2(CosyVoice):
         if not os.path.exists(hyper_yaml_path):
             raise ValueError('{} not found!'.format(hyper_yaml_path))
         with open(hyper_yaml_path, 'r') as f:
-            configs = load_hyperpyyaml(f, overrides={'qwen_pretrain_path': os.path.join(model_dir, 'CosyVoice-BlankEN')})
-        assert get_model_type(configs) == CosyVoice2Model, 'do not use {} for CosyVoice2 initialization!'.format(model_dir)
+            configs = load_hyperpyyaml(
+                f, overrides={'qwen_pretrain_path': os.path.join(model_dir, 'CosyVoice-BlankEN')})
+        assert get_model_type(
+            configs) == CosyVoice2Model, 'do not use {} for CosyVoice2 initialization!'.format(model_dir)
         self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],
                                           configs['feat_extractor'],
                                           '{}/campplus.onnx'.format(model_dir),
-                                          '{}/speech_tokenizer_v2.onnx'.format(model_dir),
+                                          '{}/speech_tokenizer_v2.onnx'.format(
+                                              model_dir),
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
         if torch.cuda.is_available() is False and (load_jit is True or load_trt is True or load_vllm is True or fp16 is True):
             load_jit, load_trt, load_vllm, fp16 = False, False, False, False
-            logging.warning('no cuda device, set load_jit/load_trt/load_vllm/fp16 to False')
-        self.model = CosyVoice2Model(configs['llm'], configs['flow'], configs['hift'], fp16)
+            logging.warning(
+                'no cuda device, set load_jit/load_trt/load_vllm/fp16 to False')
+        self.model = CosyVoice2Model(
+            configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),
                         '{}/hift.pt'.format(model_dir))
         if load_vllm:
             self.model.load_vllm('{}/vllm'.format(model_dir))
         if load_jit:
-            self.model.load_jit('{}/flow.encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
+            self.model.load_jit(
+                '{}/flow.encoder.{}.zip'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'))
         if load_trt:
             self.model.load_trt('{}/flow.decoder.estimator.{}.mygpu.plan'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
-                                '{}/flow.decoder.estimator.fp32.onnx'.format(model_dir),
+                                '{}/flow.decoder.estimator.fp32.onnx'.format(
+                                    model_dir),
                                 trt_concurrent,
                                 self.fp16)
         del configs
 
     def inference_instruct2(self, tts_text, instruct_text, prompt_wav, zero_shot_spk_id='', stream=False, speed=1.0, text_frontend=True):
         for i in tqdm(self.frontend.text_normalize(tts_text, split=True, text_frontend=text_frontend)):
-            model_input = self.frontend.frontend_instruct2(i, instruct_text, prompt_wav, self.sample_rate, zero_shot_spk_id)
+            model_input = self.frontend.frontend_instruct2(
+                i, instruct_text, prompt_wav, self.sample_rate, zero_shot_spk_id)
             start_time = time.time()
             logging.info('synthesis text {}'.format(i))
             for model_output in self.model.tts(**model_input, stream=stream, speed=speed):
-                speech_len = model_output['tts_speech'].shape[1] / self.sample_rate
-                logging.info('yield speech len {}, rtf {}'.format(speech_len, (time.time() - start_time) / speech_len))
+                speech_len = model_output['tts_speech'].shape[1] / \
+                    self.sample_rate
+                logging.info('yield speech len {}, rtf {}'.format(
+                    speech_len, (time.time() - start_time) / speech_len))
                 yield model_output
                 start_time = time.time()
 
@@ -197,19 +239,23 @@ class CosyVoice3(CosyVoice2):
         if not os.path.exists(hyper_yaml_path):
             raise ValueError('{} not found!'.format(hyper_yaml_path))
         with open(hyper_yaml_path, 'r') as f:
-            configs = load_hyperpyyaml(f, overrides={'qwen_pretrain_path': os.path.join(model_dir, 'CosyVoice-BlankEN')})
-        assert get_model_type(configs) == CosyVoice3Model, 'do not use {} for CosyVoice3 initialization!'.format(model_dir)
+            configs = load_hyperpyyaml(
+                f, overrides={'qwen_pretrain_path': os.path.join(model_dir, 'CosyVoice-BlankEN')})
+        assert get_model_type(
+            configs) == CosyVoice3Model, 'do not use {} for CosyVoice3 initialization!'.format(model_dir)
         self.frontend = CosyVoiceFrontEnd(configs['get_tokenizer'],
                                           configs['feat_extractor'],
                                           '{}/campplus.onnx'.format(model_dir),
-                                          '{}/speech_tokenizer_v3.onnx'.format(model_dir),
+                                          '{}/speech_tokenizer_v3.onnx'.format(
+                                              model_dir),
                                           '{}/spk2info.pt'.format(model_dir),
                                           configs['allowed_special'])
         self.sample_rate = configs['sample_rate']
         if torch.cuda.is_available() is False and (load_trt is True or fp16 is True):
             load_trt, fp16 = False, False
             logging.warning('no cuda device, set load_trt/fp16 to False')
-        self.model = CosyVoice3Model(configs['llm'], configs['flow'], configs['hift'], fp16)
+        self.model = CosyVoice3Model(
+            configs['llm'], configs['flow'], configs['hift'], fp16)
         self.model.load('{}/llm.pt'.format(model_dir),
                         '{}/flow.pt'.format(model_dir),
                         '{}/hift.pt'.format(model_dir))
@@ -217,9 +263,11 @@ class CosyVoice3(CosyVoice2):
             self.model.load_vllm('{}/vllm'.format(model_dir))
         if load_trt:
             if self.fp16 is True:
-                logging.warning('DiT tensorRT fp16 engine have some performance issue, use at caution!')
+                logging.warning(
+                    'DiT tensorRT fp16 engine have some performance issue, use at caution!')
             self.model.load_trt('{}/flow.decoder.estimator.{}.mygpu.plan'.format(model_dir, 'fp16' if self.fp16 is True else 'fp32'),
-                                '{}/flow.decoder.estimator.fp32.onnx'.format(model_dir),
+                                '{}/flow.decoder.estimator.fp32.onnx'.format(
+                                    model_dir),
                                 trt_concurrent,
                                 self.fp16)
         del configs
