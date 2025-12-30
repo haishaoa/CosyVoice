@@ -157,7 +157,7 @@ class CosyVoice:
             # text_frontend：是否开启文本前端处理（如拼音转换、标点归一等）
             text_frontend=text_frontend,
         )
-        # 目标文本处理与合成循环
+        # 目标文本处理与合成循环:拆词
         # tqdm：进度条
         # self.frontend.text_normalize：文本归一化方法
         # split=True：将文本拆分为适合合成的片段
