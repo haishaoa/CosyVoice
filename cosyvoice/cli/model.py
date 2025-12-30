@@ -35,7 +35,8 @@ class CosyVoiceModel:
         hift: torch.nn.Module,
         fp16: bool = False,
     ):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -95,7 +96,8 @@ class CosyVoiceModel:
         self.llm.text_encoder = llm_text_encoder
         llm_llm = torch.jit.load(llm_llm_model, map_location=self.device)
         self.llm.llm = llm_llm
-        flow_encoder = torch.jit.load(flow_encoder_model, map_location=self.device)
+        flow_encoder = torch.jit.load(
+            flow_encoder_model, map_location=self.device)
         self.flow.encoder = flow_encoder
 
     def load_trt(
@@ -156,7 +158,8 @@ class CosyVoiceModel:
                     prompt_text_len=torch.tensor(
                         [prompt_text.shape[1]], dtype=torch.int32
                     ).to(self.device),
-                    prompt_speech_token=llm_prompt_speech_token.to(self.device),
+                    prompt_speech_token=llm_prompt_speech_token.to(
+                        self.device),
                     prompt_speech_token_len=torch.tensor(
                         [llm_prompt_speech_token.shape[1]], dtype=torch.int32
                     ).to(self.device),
@@ -173,7 +176,8 @@ class CosyVoiceModel:
                     prompt_text_len=torch.tensor(
                         [prompt_text.shape[1]], dtype=torch.int32
                     ).to(self.device),
-                    prompt_speech_token=llm_prompt_speech_token.to(self.device),
+                    prompt_speech_token=llm_prompt_speech_token.to(
+                        self.device),
                     prompt_speech_token_len=torch.tensor(
                         [llm_prompt_speech_token.shape[1]], dtype=torch.int32
                     ).to(self.device),
@@ -184,7 +188,8 @@ class CosyVoiceModel:
         self.llm_end_dict[uuid] = True
 
     def vc_job(self, source_speech_token, uuid):
-        self.tts_speech_token_dict[uuid] = source_speech_token.flatten().tolist()
+        self.tts_speech_token_dict[uuid] = source_speech_token.flatten(
+        ).tolist()
         self.llm_end_dict[uuid] = True
 
     def token2wav(
@@ -217,7 +222,8 @@ class CosyVoiceModel:
 
         # mel overlap fade in out
         if self.mel_overlap_dict[uuid].shape[2] != 0:
-            tts_mel = fade_in_out(tts_mel, self.mel_overlap_dict[uuid], self.mel_window)
+            tts_mel = fade_in_out(
+                tts_mel, self.mel_overlap_dict[uuid], self.mel_window)
         # append hift cache
         if self.hift_cache_dict[uuid] is not None:
             hift_cache_mel, hift_cache_source = (
@@ -229,7 +235,7 @@ class CosyVoiceModel:
             hift_cache_source = torch.zeros(1, 1, 0)
         # keep overlap mel and hift cache
         if finalize is False:
-            self.mel_overlap_dict[uuid] = tts_mel[:, :, -self.mel_overlap_len :]
+            self.mel_overlap_dict[uuid] = tts_mel[:, :, -self.mel_overlap_len:]
             tts_mel = tts_mel[:, :, : -self.mel_overlap_len]
             tts_speech, tts_source = self.hift.inference(
                 speech_feat=tts_mel, cache_source=hift_cache_source
@@ -239,9 +245,9 @@ class CosyVoiceModel:
                     tts_speech, self.hift_cache_dict[uuid]["speech"], self.speech_window
                 )
             self.hift_cache_dict[uuid] = {
-                "mel": tts_mel[:, :, -self.mel_cache_len :],
-                "source": tts_source[:, :, -self.source_cache_len :],
-                "speech": tts_speech[:, -self.source_cache_len :],
+                "mel": tts_mel[:, :, -self.mel_cache_len:],
+                "source": tts_source[:, :, -self.source_cache_len:],
+                "speech": tts_speech[:, -self.source_cache_len:],
             }
             tts_speech = tts_speech[:, : -self.source_cache_len]
         else:
@@ -278,11 +284,11 @@ class CosyVoiceModel:
         """
         Args:
             text:待合成的文本
-            flow_embedding:流式合成模块的说话人嵌入特征,192是嵌入特征维度,决定合成语音的音色,流式合成时使用
-            llm_embedding:LLM模块的说话人嵌入特征,非流式/LLM文本处理阶段使用,同样用于匹配说话人音色
-            prompt_text:提示文本的token特征。零样本音色匹配的核心参考（与提示音频文本对应），用于对齐提示文本和待合成文本的语义
-            llm_prompt_speech_token:提示音频的token特征（供LLM模块使用），LLM处理阶段参考该token，保证音色匹配的准确性
-            flow_prompt_speech_token:提示音频的token特征（供流式模块使用），流式合成阶段参考该token，实时匹配提示音频的音色 
+            flow_embedding:流式合成模块的说话人嵌入特征，192维，用于控制音色
+            llm_embedding:LLM模块的说话人嵌入特征,192维，用于控制音色
+            prompt_text:提示文本的token特征，用于零样本音色匹配时对其音色
+            llm_prompt_speech_token:供LLM模块使用的提示音频token，用于音色匹配
+            flow_prompt_speech_token:供流式模块使用的提示音频token，用于音色匹配
         """
         # this_uuid is used to track variables related to this inference thread
         this_uuid = str(uuid.uuid1())
@@ -397,7 +403,8 @@ class CosyVoice2Model(CosyVoiceModel):
         hift: torch.nn.Module,
         fp16: bool = False,
     ):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -422,7 +429,8 @@ class CosyVoice2Model(CosyVoiceModel):
         self.hift_cache_dict = {}
 
     def load_jit(self, flow_encoder_model):
-        flow_encoder = torch.jit.load(flow_encoder_model, map_location=self.device)
+        flow_encoder = torch.jit.load(
+            flow_encoder_model, map_location=self.device)
         self.flow.encoder = flow_encoder
 
     def load_vllm(self, model_dir):
@@ -469,7 +477,7 @@ class CosyVoice2Model(CosyVoiceModel):
                 streaming=stream,
                 finalize=finalize,
             )
-        tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio :]
+        tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
         # append hift cache
         if self.hift_cache_dict[uuid] is not None:
             hift_cache_mel, hift_cache_source = (
@@ -489,9 +497,9 @@ class CosyVoice2Model(CosyVoiceModel):
                     tts_speech, self.hift_cache_dict[uuid]["speech"], self.speech_window
                 )
             self.hift_cache_dict[uuid] = {
-                "mel": tts_mel[:, :, -self.mel_cache_len :],
-                "source": tts_source[:, :, -self.source_cache_len :],
-                "speech": tts_speech[:, -self.source_cache_len :],
+                "mel": tts_mel[:, :, -self.mel_cache_len:],
+                "source": tts_source[:, :, -self.source_cache_len:],
+                "speech": tts_speech[:, -self.source_cache_len:],
             }
             tts_speech = tts_speech[:, : -self.source_cache_len]
         else:
@@ -642,7 +650,8 @@ class CosyVoice3Model(CosyVoice2Model):
         hift: torch.nn.Module,
         fp16: bool = False,
     ):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu")
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -691,14 +700,15 @@ class CosyVoice3Model(CosyVoice2Model):
                 streaming=stream,
                 finalize=finalize,
             )
-            tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio :]
+            tts_mel = tts_mel[:, :, token_offset * self.flow.token_mel_ratio:]
             # append mel cache
             if self.hift_cache_dict[uuid] is not None:
                 hift_cache_mel = self.hift_cache_dict[uuid]["mel"]
                 tts_mel = torch.concat([hift_cache_mel, tts_mel], dim=2)
                 self.hift_cache_dict[uuid]["mel"] = tts_mel
             else:
-                self.hift_cache_dict[uuid] = {"mel": tts_mel, "speech_offset": 0}
+                self.hift_cache_dict[uuid] = {
+                    "mel": tts_mel, "speech_offset": 0}
             if speed != 1.0:
                 assert (
                     token_offset == 0 and finalize is True
@@ -706,7 +716,9 @@ class CosyVoice3Model(CosyVoice2Model):
                 tts_mel = F.interpolate(
                     tts_mel, size=int(tts_mel.shape[2] / speed), mode="linear"
                 )
-            tts_speech, _ = self.hift.inference(speech_feat=tts_mel, finalize=finalize)
-            tts_speech = tts_speech[:, self.hift_cache_dict[uuid]["speech_offset"] :]
+            tts_speech, _ = self.hift.inference(
+                speech_feat=tts_mel, finalize=finalize)
+            tts_speech = tts_speech[:,
+                                    self.hift_cache_dict[uuid]["speech_offset"]:]
             self.hift_cache_dict[uuid]["speech_offset"] += tts_speech.shape[1]
         return tts_speech
