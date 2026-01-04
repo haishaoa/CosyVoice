@@ -189,14 +189,29 @@ class CosyVoiceFrontEnd:
         return embedding
 
     def _extract_speech_feat(self, prompt_wav):
+        """
+        提取音频的声学特征
+
+        :param self: 当前类的实例对象
+        :param prompt_wav: 音频文件路径
+        """
+
+        # 加载并将音频重采样到24000Hz，返回一个原始波形数据（一维数组）
         speech = load_wav(prompt_wav, 24000)
         speech_feat = (
-            self.feat_extractor(speech).squeeze(dim=0).transpose(0, 1).to(self.device)
+            # feat_extractor:预定义的梅尔频谱（Mel Spectrogram）提取器
+            self.feat_extractor(speech)
+            # 移除第0维
+            .squeeze(dim=0)
+            .transpose(0, 1)
+            .to(self.device)
         )
+        # 添加第0维
         speech_feat = speech_feat.unsqueeze(dim=0)
         speech_feat_len = torch.tensor([speech_feat.shape[1]], dtype=torch.int32).to(
             self.device
         )
+        # 1、返回声学特征张量 2、特征序列长度的张量
         return speech_feat, speech_feat_len
 
     def text_normalize(self, text, split=True, text_frontend=True):
@@ -284,11 +299,15 @@ class CosyVoiceFrontEnd:
 
         # 提取待合成文本的token序列及其长度
         tts_text_token, tts_text_token_len = self._extract_text_token(tts_text)
+        # 判断是否使用预先注册的说话人
         if zero_shot_spk_id == "":
+            # 提取提示文本的token序列及其长度
             prompt_text_token, prompt_text_token_len = self._extract_text_token(
                 prompt_text
             )
+            # 提取提示音频的：1、声学特征张量 2、特征序列长度的张量
             speech_feat, speech_feat_len = self._extract_speech_feat(prompt_wav)
+            # 提取提示音频的语音token和长度
             speech_token, speech_token_len = self._extract_speech_token(prompt_wav)
             if resample_rate == 24000:
                 # cosyvoice2, force speech_feat % speech_token = 2

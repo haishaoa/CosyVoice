@@ -19,14 +19,14 @@ import json
 import torch
 import torchaudio
 import logging
-logging.getLogger('matplotlib').setLevel(logging.WARNING)
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)s %(message)s')
+
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 
 
 def read_lists(list_file):
     lists = []
-    with open(list_file, 'r', encoding='utf8') as fin:
+    with open(list_file, "r", encoding="utf8") as fin:
         for line in fin:
             lists.append(line.strip())
     return lists
@@ -36,22 +36,31 @@ def read_json_lists(list_file):
     lists = read_lists(list_file)
     results = {}
     for fn in lists:
-        with open(fn, 'r', encoding='utf8') as fin:
+        with open(fn, "r", encoding="utf8") as fin:
             results.update(json.load(fin))
     return results
 
 
 def load_wav(wav, target_sr, min_sr=16000):
-    speech, sample_rate = torchaudio.load(wav, backend='soundfile')
+    # 使用torchaudio库加载音频文件（指定soundfile库），返回音频数据张量和原始音频的采样率（16000Hz等）
+    speech, sample_rate = torchaudio.load(wav, backend="soundfile")
+    # 转换为单声道
     speech = speech.mean(dim=0, keepdim=True)
     if sample_rate != target_sr:
-        assert sample_rate >= min_sr, 'wav sample rate {} must be greater than {}'.format(sample_rate, target_sr)
-        speech = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=target_sr)(speech)
+        # 检查采样率是否足够高：断言检查
+        assert (
+            sample_rate >= min_sr
+        ), "wav sample rate {} must be greater than {}".format(sample_rate, target_sr)
+        # 执行重采样
+        speech = torchaudio.transforms.Resample(
+            orig_freq=sample_rate, new_freq=target_sr
+        )(speech)
     return speech
 
 
 def convert_onnx_to_trt(trt_model, trt_kwargs, onnx_model, fp16):
     import tensorrt as trt
+
     logging.info("Converting onnx to trt...")
     network_flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
     logger = trt.Logger(trt.Logger.INFO)
@@ -68,10 +77,15 @@ def convert_onnx_to_trt(trt_model, trt_kwargs, onnx_model, fp16):
         if not parser.parse(f.read()):
             for error in range(parser.num_errors):
                 print(parser.get_error(error))
-            raise ValueError('failed to parse {}'.format(onnx_model))
+            raise ValueError("failed to parse {}".format(onnx_model))
     # set input shapes
-    for i in range(len(trt_kwargs['input_names'])):
-        profile.set_shape(trt_kwargs['input_names'][i], trt_kwargs['min_shape'][i], trt_kwargs['opt_shape'][i], trt_kwargs['max_shape'][i])
+    for i in range(len(trt_kwargs["input_names"])):
+        profile.set_shape(
+            trt_kwargs["input_names"][i],
+            trt_kwargs["min_shape"][i],
+            trt_kwargs["opt_shape"][i],
+            trt_kwargs["max_shape"][i],
+        )
     tensor_dtype = trt.DataType.HALF if fp16 else trt.DataType.FLOAT
     # set input and output data type
     for i in range(network.num_inputs):
@@ -112,7 +126,11 @@ def export_cosyvoice2_vllm(model, model_path, device):
     model.llm.model.config.use_bias = use_bias
     model.llm.model.save_pretrained(model_path)
     if use_bias is True:
-        os.system('sed -i s@Qwen2ForCausalLM@CosyVoice2ForCausalLM@g {}/config.json'.format(os.path.abspath(model_path)))
+        os.system(
+            "sed -i s@Qwen2ForCausalLM@CosyVoice2ForCausalLM@g {}/config.json".format(
+                os.path.abspath(model_path)
+            )
+        )
     model.llm.model.config.vocab_size = tmp_vocab_size
     model.llm.model.config.tie_word_embeddings = tmp_tie_embedding
     model.llm.model.set_input_embeddings(embed_tokens)
