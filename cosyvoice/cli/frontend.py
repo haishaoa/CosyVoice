@@ -48,16 +48,14 @@ class CosyVoiceFrontEnd:
     ):
         self.tokenizer = get_tokenizer()
         self.feat_extractor = feat_extractor
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         option = onnxruntime.SessionOptions()
         option.graph_optimization_level = (
             onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
         option.intra_op_num_threads = 1
         self.campplus_session = onnxruntime.InferenceSession(
-            campplus_model, sess_options=option, providers=[
-                "CPUExecutionProvider"]
+            campplus_model, sess_options=option, providers=["CPUExecutionProvider"]
         )
         self.speech_tokenizer_session = onnxruntime.InferenceSession(
             speech_tokenizer_model,
@@ -128,8 +126,7 @@ class CosyVoiceFrontEnd:
                 text, allowed_special=self.allowed_special
             )
             # 将token列表转换为PyTorch张量，并移动到指定的设备（self.device）
-            text_token = torch.tensor(
-                [text_token], dtype=torch.int32).to(self.device)
+            text_token = torch.tensor([text_token], dtype=torch.int32).to(self.device)
             # 计算token序列的长度，并转换为张量
             text_token_len = torch.tensor([text_token.shape[1]], dtype=torch.int32).to(
                 self.device
@@ -141,7 +138,7 @@ class CosyVoiceFrontEnd:
         for text in text_generator:
             text_token, _ = self._extract_text_token(text)
             for i in range(text_token.shape[1]):
-                yield text_token[:, i: i + 1]
+                yield text_token[:, i : i + 1]
 
     def _extract_speech_token(self, prompt_wav):
         """
@@ -153,39 +150,44 @@ class CosyVoiceFrontEnd:
 
         # 加载音频文件，从采样为16kHz，返回音频数据的张量
         speech = load_wav(prompt_wav, 16000)
-        # 检查音频长度：音频采样点数/采样率=秒数，确保不超过30秒
+        # 检查音频长度：音频采样点数/采样率=秒数，确保不超过3 0秒
         assert (
             speech.shape[1] / 16000 <= 30
         ), "do not support extract speech token for audio longer than 30s"
         # 使用whisper库提取音频的对数梅尔频谱特征，使用128个梅尔滤波器组
         feat = whisper.log_mel_spectrogram(speech, n_mels=128)
         speech_token = (
+            # 使用onnxruntime进行推理，返回语音token
             self.speech_tokenizer_session.run(
                 None,
                 {
                     self.speech_tokenizer_session.get_inputs()[0]
-                    .name: feat.detach()
-                    .cpu()
-                    .numpy(),
+                    # 第一个输入：梅尔频谱特征（转换为numpy数组）
+                    .name: feat.detach().cpu().numpy(),
                     self.speech_tokenizer_session.get_inputs()[1].name: np.array(
-                        [feat.shape[2]], dtype=np.int32
+                        # 第二个输入：特征序列长度（时间帧数）
+                        [feat.shape[2]],
+                        dtype=np.int32,
                     ),
                 },
             )[0]
+            # 将多维数据展平为一维
             .flatten()
+            # 转换为python列表
             .tolist()
         )
-        speech_token = torch.tensor(
-            [speech_token], dtype=torch.int32).to(self.device)
+        # 张量转换和设备移动
+        speech_token = torch.tensor([speech_token], dtype=torch.int32).to(self.device)
+        # 创建表示token序列长度的张量
         speech_token_len = torch.tensor([speech_token.shape[1]], dtype=torch.int32).to(
             self.device
         )
+        # 返回token序列（整数ID和token序列长度）
         return speech_token, speech_token_len
 
     def _extract_spk_embedding(self, prompt_wav):
         speech = load_wav(prompt_wav, 16000)
-        feat = kaldi.fbank(speech, num_mel_bins=80,
-                           dither=0, sample_frequency=16000)
+        feat = kaldi.fbank(speech, num_mel_bins=80, dither=0, sample_frequency=16000)
         feat = feat - feat.mean(dim=0, keepdim=True)
         embedding = (
             self.campplus_session.run(
@@ -223,6 +225,7 @@ class CosyVoiceFrontEnd:
         )
         # 添加第0维
         speech_feat = speech_feat.unsqueeze(dim=0)
+        # 获取特征序列的长度
         speech_feat_len = torch.tensor([speech_feat.shape[1]], dtype=torch.int32).to(
             self.device
         )
@@ -320,16 +323,15 @@ class CosyVoiceFrontEnd:
             prompt_text_token, prompt_text_token_len = self._extract_text_token(
                 prompt_text
             )
+            # speech_feat：管说的音色   speech_token：管说的内容
             # 提取提示音频的：1、声学特征张量 2、特征序列长度的张量
-            speech_feat, speech_feat_len = self._extract_speech_feat(
-                prompt_wav)
+            speech_feat, speech_feat_len = self._extract_speech_feat(prompt_wav)
             # 提取提示音频的语音token和长度
-            speech_token, speech_token_len = self._extract_speech_token(
-                prompt_wav)
+            speech_token, speech_token_len = self._extract_speech_token(prompt_wav)
             if resample_rate == 24000:
                 # cosyvoice2, force speech_feat % speech_token = 2
-                token_len = min(
-                    int(speech_feat.shape[1] / 2), speech_token.shape[1])
+                # 确保声学特征长度是语音token长度的2倍
+                token_len = min(int(speech_feat.shape[1] / 2), speech_token.shape[1])
                 speech_feat, speech_feat_len[:] = (
                     speech_feat[:, : 2 * token_len],
                     2 * token_len,
