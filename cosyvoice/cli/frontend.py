@@ -186,10 +186,15 @@ class CosyVoiceFrontEnd:
         return speech_token, speech_token_len
 
     def _extract_spk_embedding(self, prompt_wav):
+        # 加载音频文件
         speech = load_wav(prompt_wav, 16000)
+        # 提取声学特征
         feat = kaldi.fbank(speech, num_mel_bins=80, dither=0, sample_frequency=16000)
+        # 特征归一化
         feat = feat - feat.mean(dim=0, keepdim=True)
+        # 提取说话人嵌入
         embedding = (
+            # 运行ONNX模型推理
             self.campplus_session.run(
                 None,
                 {
@@ -202,7 +207,9 @@ class CosyVoiceFrontEnd:
             .flatten()
             .tolist()
         )
+        # 转换为PyTorch张量，并转移到指定设备
         embedding = torch.tensor([embedding]).to(self.device)
+        # 返回说话人嵌入
         return embedding
 
     def _extract_speech_feat(self, prompt_wav):
@@ -340,6 +347,7 @@ class CosyVoiceFrontEnd:
                     speech_token[:, :token_len],
                     token_len,
                 )
+            # 声学指纹提取说话人嵌入向量：控制说话人的身份
             embedding = self._extract_spk_embedding(prompt_wav)
             model_input = {
                 "prompt_text": prompt_text_token,

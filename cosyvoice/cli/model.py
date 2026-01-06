@@ -341,6 +341,7 @@ class CosyVoiceModel:
                             : token_hop_len + self.token_overlap_len
                         ]
                     ).unsqueeze(dim=0)
+                    # 将token转换为语音波形
                     this_tts_speech = self.token2wav(
                         token=this_tts_speech_token,
                         prompt_token=flow_prompt_speech_token,
