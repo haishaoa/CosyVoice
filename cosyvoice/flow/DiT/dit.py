@@ -1,4 +1,3 @@
-
 """
 ein notation:
 b - batch
@@ -33,22 +32,35 @@ from cosyvoice.flow.DiT.modules import (
 class TextEmbedding(nn.Module):
     def __init__(self, text_num_embeds, text_dim, conv_layers=0, conv_mult=2):
         super().__init__()
-        self.text_embed = nn.Embedding(text_num_embeds + 1, text_dim)  # use 0 as filler token
+        self.text_embed = nn.Embedding(
+            text_num_embeds + 1, text_dim
+        )  # use 0 as filler token
 
         if conv_layers > 0:
             self.extra_modeling = True
             self.precompute_max_pos = 4096  # ~44s of 24khz audio
-            self.register_buffer("freqs_cis", precompute_freqs_cis(text_dim, self.precompute_max_pos), persistent=False)
+            self.register_buffer(
+                "freqs_cis",
+                precompute_freqs_cis(text_dim, self.precompute_max_pos),
+                persistent=False,
+            )
             self.text_blocks = nn.Sequential(
-                *[ConvNeXtV2Block(text_dim, text_dim * conv_mult) for _ in range(conv_layers)]
+                *[
+                    ConvNeXtV2Block(text_dim, text_dim * conv_mult)
+                    for _ in range(conv_layers)
+                ]
             )
         else:
             self.extra_modeling = False
 
     def forward(self, text: int["b nt"], seq_len, drop_text=False):  # noqa: F722
         batch, text_len = text.shape[0], text.shape[1]
-        text = text + 1  # use 0 as filler token. preprocess of batch pad -1, see list_str_to_idx()
-        text = text[:, :seq_len]  # curtail if character tokens are more than the mel spec tokens
+        text = (
+            text + 1
+        )  # use 0 as filler token. preprocess of batch pad -1, see list_str_to_idx()
+        text = text[
+            :, :seq_len
+        ]  # curtail if character tokens are more than the mel spec tokens
         text = F.pad(text, (0, seq_len - text_len), value=0)
 
         if drop_text:  # cfg for text
@@ -60,7 +72,9 @@ class TextEmbedding(nn.Module):
         if self.extra_modeling:
             # sinus pos emb
             batch_start = torch.zeros((batch,), dtype=torch.long)
-            pos_idx = get_pos_embed_indices(batch_start, seq_len, max_pos=self.precompute_max_pos)
+            pos_idx = get_pos_embed_indices(
+                batch_start, seq_len, max_pos=self.precompute_max_pos
+            )
             text_pos_embed = self.freqs_cis[pos_idx]
             text = text + text_pos_embed
 
@@ -82,11 +96,11 @@ class InputEmbedding(nn.Module):
         self.conv_pos_embed = CausalConvPositionEmbedding(dim=out_dim)
 
     def forward(
-            self,
-            x: float["b n d"],
-            cond: float["b n d"],
-            text_embed: float["b n d"],
-            spks: float["b d"],
+        self,
+        x: float["b n d"],
+        cond: float["b n d"],
+        text_embed: float["b n d"],
+        spks: float["b d"],
     ):
         to_cat = [x, cond, text_embed]
         if self.spk_dim > 0:
@@ -117,7 +131,7 @@ class DiT(nn.Module):
         spk_dim=None,
         out_channels=None,
         static_chunk_size=50,
-        num_decoding_left_chunks=2
+        num_decoding_left_chunks=2,
     ):
         super().__init__()
 
@@ -132,9 +146,20 @@ class DiT(nn.Module):
         self.depth = depth
 
         self.transformer_blocks = nn.ModuleList(
-            [DiTBlock(dim=dim, heads=heads, dim_head=dim_head, ff_mult=ff_mult, dropout=dropout) for _ in range(depth)]
+            [
+                DiTBlock(
+                    dim=dim,
+                    heads=heads,
+                    dim_head=dim_head,
+                    ff_mult=ff_mult,
+                    dropout=dropout,
+                )
+                for _ in range(depth)
+            ]
         )
-        self.long_skip_connection = nn.Linear(dim * 2, dim, bias=False) if long_skip_connection else None
+        self.long_skip_connection = (
+            nn.Linear(dim * 2, dim, bias=False) if long_skip_connection else None
+        )
 
         self.norm_out = AdaLayerNormZero_Final(dim)  # final modulation
         self.proj_out = nn.Linear(dim, mel_dim)
@@ -161,9 +186,15 @@ class DiT(nn.Module):
             residual = x
 
         if streaming is True:
-            attn_mask = add_optional_chunk_mask(x, mask.bool(), False, False, 0, self.static_chunk_size, -1).unsqueeze(dim=1)
+            attn_mask = add_optional_chunk_mask(
+                x, mask.bool(), False, False, 0, self.static_chunk_size, -1
+            ).unsqueeze(dim=1)
         else:
-            attn_mask = add_optional_chunk_mask(x, mask.bool(), False, False, 0, 0, -1).repeat(1, x.size(1), 1).unsqueeze(dim=1)
+            attn_mask = (
+                add_optional_chunk_mask(x, mask.bool(), False, False, 0, 0, -1)
+                .repeat(1, x.size(1), 1)
+                .unsqueeze(dim=1)
+            )
 
         for block in self.transformer_blocks:
             x = block(x, t, mask=attn_mask.bool(), rope=rope)
